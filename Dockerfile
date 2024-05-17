@@ -1,9 +1,20 @@
-FROM golang:1.17-alpine
+# Stage 1: Build
+FROM golang:latest AS builder
+WORKDIR /src/app
 
-WORKDIR /app
-
+# Copy the source code
 COPY . .
 
-RUN go build -o kopt cmd/main.go
+# Build the application
+RUN go build -o k0pt cmd/main.go 
 
-ENTRYPOINT ["./kopt"]
+# Stage 2: Runtime
+FROM alpine:latest AS runner
+WORKDIR /usr/local/bin
+
+# Copy the binary from the builder stage
+COPY --from=builder /src/app/k0pt .
+
+# Run the binary
+ENTRYPOINT ["./k0pt"]
+CMD ["version"]
