@@ -1,0 +1,8 @@
+Package: kOpt
+Version: 1.0.0
+Section: base
+Priority: optional
+Architecture: amd64
+Depends: 
+Maintainer: Your Name <your.email@example.com>
+Description: kOpt is a tool for Kubernetes resource optimization and cost management.
