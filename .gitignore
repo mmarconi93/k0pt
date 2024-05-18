@@ -37,3 +37,9 @@ go.work
 
 # Go module files
 go.sum
+
+# Environment variables
+.env
+
+# Docker variables
+.dockerignore

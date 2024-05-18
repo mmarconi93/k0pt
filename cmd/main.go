@@ -5,9 +5,11 @@ import (
     "fmt"
     "os"
 
+    "github.com/joho/godotenv"
     "github.com/mmarconi93/k0pt/pkg/analysis"
     "github.com/mmarconi93/k0pt/pkg/control"
     "github.com/mmarconi93/k0pt/pkg/info"
+    "github.com/mmarconi93/k0pt/pkg/kubeconfig"
     "github.com/mmarconi93/k0pt/pkg/namespaces"
     "github.com/mmarconi93/k0pt/pkg/recommendations"
     "github.com/sirupsen/logrus"
@@ -20,13 +22,19 @@ var log = logrus.New()
 func init() {
     log.Out = os.Stdout
     log.SetFormatter(&logrus.JSONFormatter{})
+    if err := godotenv.Load(); err != nil {
+        log.Warn("No .env file found")
+    }
 }
 
 func main() {
     command, namespace, clusterName := control.ParseFlags()
     fmt.Printf("Command: %s, Namespace: %s, ClusterName: %s\n", command, namespace, clusterName)
 
-    clientset, config := control.CreateClientset()
+    clientset, err := kubeconfig.LoadKubeClient("")
+    if err != nil {
+        log.Fatalf("Failed to load Kubernetes client: %v", err)
+    }
 
     switch command {
     case "list-pods":
@@ -38,13 +46,17 @@ func main() {
     case "delete-namespace":
         namespaces.DeleteNamespace(clientset, namespace)
     case "switch-namespace":
+        config, err := kubeconfig.LoadKubeconfig("")
+        if err != nil {
+            log.Fatalf("Failed to load kubeconfig: %v", err)
+        }
         namespaces.CheckoutNamespace(clientset, config, namespace)
     case "calculate-cost-savings":
         recommendations.CalculateCostSavings(clientset)
     case "optimize-resources":
         recommendations.OptimizeResources(clientset)
     case "analyze-resource-usage":
-        analysis.AnalyzeResourceUsage()
+        analysis.AnalyzeResourceUsage(clientset)
     case "help":
         info.DisplayHelp()
     case "version":

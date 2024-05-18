@@ -3,8 +3,7 @@ package recommendations
 import (
     "context"
     "fmt"
-    "os"
-
+    "github.com/mmarconi93/k0pt/pkg/cloud"
     "github.com/sirupsen/logrus"
     metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
     "k8s.io/client-go/kubernetes"
@@ -30,6 +29,13 @@ type CostSavingRecommendations struct {
 func CalculateCostSavings(clientset *kubernetes.Clientset) {
     log.Info("Calculating cost savings...")
 
+    // Fetch Azure pricing
+    prices, err := cloud.FetchAzurePricing()
+    if err != nil {
+        log.WithError(err).Error("Failed to fetch Azure pricing")
+        return
+    }
+
     namespaces, err := clientset.CoreV1().Namespaces().List(context.TODO(), metav1.ListOptions{})
     if err != nil {
         log.WithError(err).Error("Failed to list namespaces")
@@ -47,7 +53,7 @@ func CalculateCostSavings(clientset *kubernetes.Clientset) {
         }
 
         nsRecommendations := CostSavingRecommendations{Namespace: namespaceName}
-        
+
         for _, pod := range pods.Items {
             podName := pod.Name
             usage, err := clientset.MetricsV1beta1().PodMetricses(namespaceName).Get(context.TODO(), podName, metav1.GetOptions{})
@@ -58,15 +64,18 @@ func CalculateCostSavings(clientset *kubernetes.Clientset) {
 
             for _, container := range usage.Containers {
                 cpuUsage := container.Usage.Cpu().MilliValue()
-                memoryUsage := container.Usage.Memory().Value()
+                memoryUsage := container.Usage.Memory().Value() / (1024 * 1024) // in MiB
+
+                cpuCost := float64(cpuUsage) / 1000 * prices["cpu"]
+                memoryCost := float64(memoryUsage) * prices["memory"]
 
                 // Logic to identify underutilized and overprovisioned pods
-                if cpuUsage < 100 && memoryUsage < 100*1024*1024 {
+                if cpuUsage < 100 && memoryUsage < 100 {
                     nsRecommendations.UnderutilizedPods = append(nsRecommendations.UnderutilizedPods, podName)
-                    nsRecommendations.SuggestedActions = append(nsRecommendations.SuggestedActions, fmt.Sprintf("Consider scaling down pod: %s in namespace: %s", podName, namespaceName))
-                } else if cpuUsage > 500 || memoryUsage > 512*1024*1024 {
+                    nsRecommendations.SuggestedActions = append(nsRecommendations.SuggestedActions, fmt.Sprintf("Consider scaling down pod: %s in namespace: %s. Estimated cost savings: $%.2f", podName, namespaceName, cpuCost+memoryCost))
+                } else if cpuUsage > 500 || memoryUsage > 512 {
                     nsRecommendations.OverprovisionedPods = append(nsRecommendations.OverprovisionedPods, podName)
-                    nsRecommendations.SuggestedActions = append(nsRecommendations.SuggestedActions, fmt.Sprintf("Consider scaling up pod: %s in namespace: %s", podName, namespaceName))
+                    nsRecommendations.SuggestedActions = append(nsRecommendations.SuggestedActions, fmt.Sprintf("Consider scaling up pod: %s in namespace: %s. Estimated cost increase: $%.2f", podName, namespaceName, cpuCost+memoryCost))
                 }
             }
         }
